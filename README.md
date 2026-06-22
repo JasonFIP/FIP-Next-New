@@ -1,100 +1,162 @@
-# FIP Backend — step 0
+# FIP Backend — step 1
 
-This is the minimum-viable Next.js app for the Farm Intelligence Platform agent stack. It contains nothing of the real product yet. Its only job is to **prove the deployment pipeline works** end to end from iPad → GitHub → Vercel.
+This is step 1 of the Agvance Dairy Nutrition agent rollout. Adds Supabase
+authentication, the database schema, and the admin invite flow onto the
+working step 0 deployment harness.
 
-If you can deploy this and load it from your iPad Safari, we have a foundation to build on. If you can't, we need to fix that before any agent work begins.
+If step 0 deployed and you saw the green "Backend deployed." page, this is the
+next layer on top.
 
-## What's in here
+## What changed since step 0
 
-```
-fip-backend/
-├── package.json              dependencies + scripts
-├── next.config.js            Next.js config (minimal)
-├── tsconfig.json             TypeScript config
-├── next-env.d.ts             Next.js TS reference (do not edit)
-├── .gitignore                standard ignores
-├── pages/
-│   ├── _app.tsx              app wrapper
-│   ├── index.tsx             home page with health check display
-│   └── api/
-│       └── health.ts         /api/health endpoint
-├── styles/
-│   └── globals.css           minimal NZ-palette styling
-└── README.md                 this file
-```
+- **New: Supabase database schema** — `supabase/migrations/0001_initial_schema.sql`
+- **New: Auth pages** — `/signin`, `/accept-invite`, `/dashboard`, `/admin`
+- **New: Admin invite API** — `/api/admin/invite` for inviting users by email
+- **New: Supabase client libraries** — `lib/supabase-browser.ts`, `lib/supabase-server.ts`
+- **Updated: `/api/health`** — now reports whether Supabase env vars are configured
+- **Updated: `/` (home page)** — links to sign-in / dashboard
+- **Updated: `package.json`** — adds `@supabase/supabase-js` and `@supabase/ssr`
 
-10 files. That's the entire app.
+## Deployment order — IMPORTANT
 
-## Deploy via iPad workflow
+Do these in order. Skipping a step will fail in confusing ways.
 
-### 1. Get the files into a GitHub repo
+### 1. Run the database migration in Supabase
 
-In Working Copy:
-- Create a fresh empty repo (or use a new branch of an existing one). Recommended name: `fip-backend`
-- Add each file from this folder, preserving the folder structure exactly
-- Critical paths:
-  - `pages/index.tsx` (not `index.tsx` at root)
-  - `pages/api/health.ts` (not `api/health.ts` at root)
-  - `styles/globals.css`
-- Commit with message `step 0 — minimal Next.js scaffold`
-- Push to GitHub (set up the remote if it's not already)
+Before deploying any code:
 
-### 2. Verify the structure on GitHub
+- Go to your Supabase project dashboard
+- Left sidebar: **SQL Editor**
+- Click "New query"
+- Open `supabase/migrations/0001_initial_schema.sql` from this folder
+- Copy the ENTIRE contents
+- Paste into the SQL editor
+- Click "Run" (or Cmd/Ctrl + Enter)
 
-Open the repo in Safari, navigate the folder tree, and confirm you can see:
-- `pages/index.tsx` exists
-- `pages/api/health.ts` exists
-- `package.json` is at the root, not nested in a subfolder
+You should see "Success. No rows returned." If you see an error, screenshot
+it and stop. The migration is idempotent for fresh databases but won't run
+twice cleanly — if you have to retry, drop the tables first.
 
-If any file is in the wrong place, fix it before deploying — Vercel cannot guess.
+### 2. Get the service_role key from Supabase
 
-### 3. Deploy to Vercel
+The invite flow needs this. It's the powerful key that bypasses RLS.
 
-- Go to vercel.com → "Add New Project"
-- Import the `fip-backend` repo
-- Framework Preset: should auto-detect as **Next.js**. If it doesn't, something is wrong with the repo structure — go back to step 2
-- Build settings: leave defaults
-- Environment variables: leave empty (we don't need any yet)
-- Click Deploy
+- Supabase dashboard → Settings → API
+- Find "service_role secret" → click "Reveal"
+- Copy the value (starts with `eyJ...`)
+- **Do not commit this anywhere. Do not paste it in chat.**
 
-Build should complete in 1–2 minutes. You'll get a URL like `fip-backend-abc123.vercel.app`.
+### 3. Set environment variables in Vercel
 
-### 4. Verify it works
+Before pushing the new code:
 
-Open the deployment URL in iPad Safari. You should see:
-- "Backend deployed." headline
-- A Health Check card showing **OK** with service info
-- A "What this proves" list
+- Go to vercel.com → your project (`fip-next-new`) → Settings → Environment Variables
+- Add these four variables (Production environment):
 
-If the health check shows an error, the page rendered but the API route is broken — usually means `pages/api/health.ts` is in the wrong path. Check step 2.
+| Name | Value |
+|------|-------|
+| NEXT_PUBLIC_SUPABASE_URL | https://ehuvqkolypfqrywonkxj.supabase.co |
+| NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY | sb_publishable_99-S0z8FJxQWNbhkzZBTSg_jZ8G-Dax |
+| SUPABASE_SERVICE_ROLE_KEY | (the secret from step 2) |
+| NEXT_PUBLIC_SITE_URL | https://fip-next-new.vercel.app |
 
-If the page doesn't render at all, the build failed — check the Vercel deploy logs.
+For each variable: name it, paste the value, select "Production" environment,
+click Save.
 
-### 5. Confirm the deploy loop is reliable
+### 4. Push the new code
 
-Make a trivial change (e.g. edit the headline in `pages/index.tsx`), commit, push from Working Copy, watch Vercel redeploy automatically, refresh the URL, confirm the change appears.
+Same flow as step 0:
+- Copy these files into your `FIP-Next-New` GitHub repo via web upload
+- Preserve folder structure exactly
+- The new folders to upload: `lib/`, `supabase/`
+- Updated files at root + in `pages/`: see the file list below
+- Commit with message "step 1 — supabase auth"
+- Vercel auto-redeploys on push
 
-If this works, **the pipeline is solid and we can build on it**. If something is flaky, we debug now, not later.
+### 5. Verify the deployment
 
-## What's next
+After Vercel finishes building:
 
-Once step 0 is verified working:
+1. Open your deployment URL
+2. The home page should show **Supabase: configured** in the health check
+3. Click "Sign in" link
 
-- **Step 1:** Supabase setup — provision database, auth, schema for users/farms/recommendations
-- **Step 2:** KB ingestion — export Dairy Brain project docs, chunk, embed, store in pgvector
-- **Step 3:** Agent endpoint — `/api/chat` calling Anthropic API with RAG retrieval, system prompt, mode separation
-- **Step 4:** Wire the FIP prototype UI to call `/api/chat` instead of using scripted responses
+You won't be able to sign in yet because there's no admin user. That's step 6.
 
-Each step builds on the previous. None of them work without step 0.
+### 6. Create your admin user
 
-## Local development (if you ever want to)
+- Supabase dashboard → Authentication → Users
+- Click "Add user" → "Create new user"
+- Email: your email address
+- Password: set a password you'll remember
+- Auto Confirm User: checked
+- Click "Create user"
 
-Not required for deployment, but if you can run Node anywhere:
+Then make yourself admin:
+- Supabase dashboard → SQL Editor → New query
+- Run:
+  ```sql
+  UPDATE profiles SET role = 'admin' WHERE email = 'your-email@example.com';
+  ```
+- Replace with the email you just used
 
-```
-npm install
-npm run dev
-# open http://localhost:3000
-```
+### 7. Sign in and verify
 
-For iPad-only workflow, skip this entirely — push and let Vercel build.
+- Go to your-deployment-url/signin
+- Enter your admin email and password
+- You should land on `/dashboard` showing your role as `admin`
+- Try going to `/admin` — should load (it's admin-only)
+
+### 8. Invite the pilot consultants
+
+On the `/admin` page:
+- Email: cristina@example.com (use her real email)
+- First name: Cristina
+- Last name: H
+- Role: Consultant
+- Click Send invite
+
+Repeat for Christo V and Chris B.
+
+Each one will get an email from Supabase with a link to accept the invite.
+That link lands them at `/accept-invite` where they set their password,
+then they're redirected to `/dashboard`.
+
+## What this build proves
+
+- Auth flow works end to end (sign in, dashboard renders, sign out)
+- Role-based access control is enforced server-side
+- The admin invite flow sends real emails via Supabase
+- The database schema is ready for the agent (conversations, messages,
+  recommendations, kb_citations all exist)
+- The deployment pipeline still works after adding a real backend
+
+## What this build does NOT do
+
+- No KB ingestion yet (step 2)
+- No vector storage or RAG (step 2)
+- No Anthropic API integration yet (step 3)
+- No actual agent chat (step 3)
+- No farm-data tools (step 4)
+- No recommendation draft generation (step 5)
+
+These are the next phases. Each builds on this foundation.
+
+## Troubleshooting
+
+**Sign-in fails with "Invalid login credentials"**: the password is wrong, OR
+the user doesn't exist yet (no admin created in step 6), OR you're using the
+wrong email.
+
+**Dashboard immediately redirects to sign-in even after signing in**: cookie
+likely not persisting. Check that NEXT_PUBLIC_SITE_URL matches your actual
+deployment URL.
+
+**Admin page redirects to dashboard**: your profile.role isn't 'admin'. Check
+in Supabase: `SELECT email, role FROM profiles;`
+
+**Invite fails with "Service role not configured"**: SUPABASE_SERVICE_ROLE_KEY
+not set in Vercel env vars. Add it and redeploy.
+
+**Health check shows "Supabase: not configured"**: NEXT_PUBLIC_SUPABASE_URL
+or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY missing from Vercel env vars.
