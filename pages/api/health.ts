@@ -1,10 +1,9 @@
 /**
  * /api/health — does this backend actually work?
  *
- * Returns a JSON object with no dependencies on Supabase, no database, no
- * Anthropic. If this responds with 200 OK, you have a working Next.js API
- * route on Vercel. Also reports whether Supabase env vars are present so
- * the deploy harness can confirm the secrets were added.
+ * Returns a JSON object showing which dependencies are configured. Step 2
+ * adds Anthropic and Voyage. The KB check (whether ingestion has happened)
+ * requires a database round-trip and is exposed separately at /api/health/kb.
  */
 
 import type { NextApiRequest, NextApiResponse } from 'next';
@@ -16,6 +15,8 @@ interface HealthResponse {
   timestamp: string;
   environment: string;
   supabase_configured: boolean;
+  anthropic_configured: boolean;
+  voyage_configured: boolean;
 }
 
 export default function handler(
@@ -27,15 +28,15 @@ export default function handler(
     return res.status(405).json({
       ok: false,
       service: 'fip-backend',
-      version: '0.2.0',
+      version: '0.3.0',
       timestamp: new Date().toISOString(),
       environment: process.env.VERCEL_ENV || 'local',
       supabase_configured: false,
+      anthropic_configured: false,
+      voyage_configured: false,
     });
   }
 
-  // Are the Supabase env vars set?
-  // We check both since they're both needed for the auth flow.
   const supabaseConfigured =
     !!process.env.NEXT_PUBLIC_SUPABASE_URL &&
     !!process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
@@ -43,9 +44,11 @@ export default function handler(
   res.status(200).json({
     ok: true,
     service: 'fip-backend',
-    version: '0.2.0',
+    version: '0.3.0',
     timestamp: new Date().toISOString(),
     environment: process.env.VERCEL_ENV || 'local',
     supabase_configured: supabaseConfigured,
+    anthropic_configured: !!process.env.ANTHROPIC_API_KEY,
+    voyage_configured: !!process.env.VOYAGE_API_KEY,
   });
 }
