@@ -28,7 +28,7 @@ export default function handler(
     return res.status(405).json({
       ok: false,
       service: 'fip-backend',
-      version: '0.3.0',
+      version: '0.4.0',
       timestamp: new Date().toISOString(),
       environment: process.env.VERCEL_ENV || 'local',
       supabase_configured: false,
@@ -44,7 +44,7 @@ export default function handler(
   res.status(200).json({
     ok: true,
     service: 'fip-backend',
-    version: '0.3.0',
+    version: '0.4.0',
     timestamp: new Date().toISOString(),
     environment: process.env.VERCEL_ENV || 'local',
     supabase_configured: supabaseConfigured,

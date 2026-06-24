@@ -1,6 +1,6 @@
 {
   "name": "fip-backend",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "ingest": "tsx scripts/ingest-kb.ts",
-    "verify-kb": "tsx scripts/verify-kb.ts"
+    "verify-kb": "tsx scripts/verify-kb.ts",
+    "test-spec": "tsx scripts/test-spec.ts"
   },
   "dependencies": {
     "@supabase/ssr": "0.5.1",

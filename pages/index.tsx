@@ -1,8 +1,9 @@
 /**
  * FIP backend — home page.
  *
- * Step 1 version: still shows the health check (proves backend is up), but
- * now also offers a way into sign-in / dashboard.
+ * Step 3 version: shifts focus from the harness checks to the actual product.
+ * Health check is still shown (proves the backend is up) but the primary
+ * action for signed-in advisors is "Open chat."
  */
 
 import Head from 'next/head';
@@ -16,6 +17,8 @@ interface HealthCheck {
   timestamp: string;
   environment: string;
   supabase_configured?: boolean;
+  anthropic_configured?: boolean;
+  voyage_configured?: boolean;
   error?: string;
 }
 
@@ -33,7 +36,7 @@ export default function Home() {
   return (
     <>
       <Head>
-        <title>FIP Backend</title>
+        <title>FIP &middot; Farm Intelligence Platform</title>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
       <main className="container">
@@ -43,12 +46,46 @@ export default function Home() {
         </header>
 
         <section className="hero">
-          <h1>Backend deployed.</h1>
+          <h1>Agvance Dairy Nutrition agent.</h1>
           <p className="sub">
-            Step 1 of the Agvance Dairy Nutrition agent rollout: Supabase
-            auth wired into the deployment harness. Health check below
-            confirms the backend is up and that Supabase env vars are set.
+            Grounded nutrition advice for NZ dairy consultants. Every answer is
+            cited against the Agvance Dairy Brain knowledge base &mdash; product
+            library, seasonal playbooks, premix range, peer-reviewed evidence
+            notes, and feed reference tables.
           </p>
+
+          <div style={{ display: 'flex', gap: 10, marginBottom: 48 }}>
+            <Link
+              href="/chat"
+              style={{
+                background: 'var(--horizon)',
+                color: '#1a1408',
+                padding: '12px 22px',
+                borderRadius: 10,
+                fontWeight: 600,
+                fontSize: 14,
+                textDecoration: 'none',
+                letterSpacing: '0.01em',
+              }}
+            >
+              Open chat &rarr;
+            </Link>
+            <Link
+              href="/signin"
+              style={{
+                background: 'transparent',
+                border: '1px solid var(--line-2)',
+                color: 'var(--star-dim)',
+                padding: '12px 22px',
+                borderRadius: 10,
+                fontSize: 14,
+                textDecoration: 'none',
+                letterSpacing: '0.01em',
+              }}
+            >
+              Sign in
+            </Link>
+          </div>
         </section>
 
         <section className="health">
@@ -69,10 +106,6 @@ export default function Home() {
                 <span className="v">{health.ok ? 'OK' : 'DEGRADED'}</span>
               </div>
               <div className="row">
-                <span className="k">Service</span>
-                <span className="v">{health.service}</span>
-              </div>
-              <div className="row">
                 <span className="k">Version</span>
                 <span className="v">{health.version}</span>
               </div>
@@ -87,45 +120,25 @@ export default function Home() {
                 </span>
               </div>
               <div className="row">
-                <span className="k">Server time</span>
+                <span className="k">Anthropic</span>
                 <span className="v">
-                  {new Date(health.timestamp).toLocaleString()}
+                  {health.anthropic_configured ? 'configured' : 'not configured'}
+                </span>
+              </div>
+              <div className="row">
+                <span className="k">Voyage</span>
+                <span className="v">
+                  {health.voyage_configured ? 'configured' : 'not configured'}
                 </span>
               </div>
             </div>
           )}
         </section>
 
-        <section className="next">
-          <h2>Sign in</h2>
-          <ul>
-            <li>
-              <Link href="/signin">Sign in</Link> &mdash; existing users
-            </li>
-            <li>
-              <Link href="/dashboard">Dashboard</Link> &mdash; signed-in users
-              only (redirects to sign-in if not authed)
-            </li>
-          </ul>
-
-          <h2>What this proves</h2>
-          <ul>
-            <li>The Next.js page renders</li>
-            <li>The /api/health endpoint responds</li>
-            <li>Supabase env vars are set (if &ldquo;configured&rdquo; shows)</li>
-            <li>Auth flow (sign in, sign out) works via Supabase</li>
-          </ul>
-          <h2>What this does not prove</h2>
-          <ul>
-            <li>The KB ingestion or RAG layer exists (step 2)</li>
-            <li>Anthropic API works from this backend (step 3)</li>
-            <li>The agent itself answers questions (step 3)</li>
-          </ul>
-        </section>
-
         <footer>
           <small>
-            FIP backend deployment harness. Real product UI to come.
+            FIP backend &middot; Agvance Dairy Nutrition agent &middot; step 3
+            &middot; consultant mode
           </small>
         </footer>
       </main>

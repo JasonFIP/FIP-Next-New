@@ -1,185 +1,133 @@
-# FIP Backend — step 2
+# FIP Backend — step 3
 
-This is step 2 of the Agvance Dairy Nutrition agent rollout. Adds the
-knowledge-base ingestion + retrieval layer on top of the working step 1
-auth foundation.
+This is step 3 of the Agvance Dairy Nutrition agent rollout. Wires the
+actual chat agent: a streaming Claude-powered conversation backed by
+the Dairy Brain knowledge base, with citations, feedback capture, and
+conversation persistence.
 
-If step 1 deployed and you signed in successfully as admin, this is the
-next layer on top.
+If steps 0-2 deployed (KB ingested, retrieval verified), this is what
+you've been building toward.
 
-## What changed since step 1
+## What changed since step 2
 
-- **New: KB schema migration** — `supabase/migrations/0002_kb_ingestion.sql`
-  - Enables pgvector extension
-  - Adds `kb_documents`, `kb_chunks`, `message_feedback` tables
-  - Adds `match_kb_chunks` RPC function for similarity search with safety filters
-- **New: client libraries** — `lib/voyage.ts`, `lib/anthropic.ts`, `lib/kb-search.ts`
-- **New: ingestion script** — `scripts/ingest-kb.ts` (runs locally, not on Vercel)
-- **New: verification script** — `scripts/verify-kb.ts` (runs locally)
-- **New: KB health endpoint** — `/api/health/kb` (verify ingestion from deployed app)
-- **Updated: `/api/health`** — now reports Anthropic + Voyage configuration
-- **Updated: `package.json`** — adds `dotenv`, `tsx`, scripts for ingest/verify
+**New backend (API):**
+- POST /api/chat — streaming chat endpoint with RAG retrieval and conversation persistence
+- GET /api/conversations — list user's conversations
+- POST /api/conversations — create new conversation
+- GET /api/conversations/[id] — get conversation with messages + citations + feedback
+- DELETE /api/conversations/[id] — delete a conversation
+- POST /api/messages/[id]/feedback — thumbs-up/down + structured rejection reasons
 
-## Prerequisites
+**New frontend:**
+- /chat — the consultant chat UI (southern-sky palette, glassmorphic input, citation chips, feedback popup)
+- Updated home page with "Open chat" call-to-action
 
-Before deploying step 2 code, complete in order:
+**New system prompt:**
+- lib/prompts/consultant.ts — the keystone document that encodes the spec into the agent's behavior
 
-### 1. Install Node.js on your Windows machine
+**New test runner:**
+- scripts/test-spec.ts — runs the §9 adversarial test set against the live agent
 
-You'll need Node 18.17+ to run the ingestion script locally.
+**Updated:**
+- package.json — bumped to v0.4.0, adds test-spec script
+- pages/api/health.ts — reports version 0.4.0
+- pages/index.tsx — home page now showcases the chat product
+- styles/globals.css — adds the chat UI styles (sidebar, messages, citations, input bar, feedback popup)
 
-- Check if you have it: open Command Prompt (or PowerShell) and run `node --version`
-- If you see a version number ≥ 18.17, you're good
-- If you see "command not found" or the version is older:
-  - Go to nodejs.org
-  - Download the Windows installer for the LTS version
-  - Run it (Next → Next → Install → Done)
-  - Close and reopen Command Prompt, run `node --version` again
+## What this build does
 
-### 2. Run the SQL migration
+Once deployed:
 
-- Supabase dashboard → SQL Editor → New query
-- Open `supabase/migrations/0002_kb_ingestion.sql` in Notepad
-- Copy the ENTIRE contents
-- Paste into the SQL editor → Run
-- Should say "Success. No rows returned."
-- If errors, screenshot and stop
-
-### 3. Confirm env vars in Vercel
-
-These should already be there if you completed step 1 setup:
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `NEXT_PUBLIC_SITE_URL`
-- `ANTHROPIC_API_KEY`  (added when we set up Anthropic)
-- `VOYAGE_API_KEY`     (added when we set up Voyage)
-
-### 4. Push the new code to GitHub
-
-Same flow as step 1 — UPDATE-OVERWRITE and NEW-UPLOAD zips that you drag into the
-github.com web upload. Vercel auto-redeploys.
-
-### 5. Verify the deployment
-
-- Visit your deployment URL
-- Health check at `/api/health` should now show:
-  - `supabase_configured: true`
-  - `anthropic_configured: true`
-  - `voyage_configured: true`
-
-## Ingesting the KB (this is the new bit)
-
-The ingestion script runs on your **Windows machine**, not on Vercel.
-
-### Set up local .env.local
-
-Create a file called `.env.local` in your project folder with the same six
-env vars from Vercel:
-
-```
-NEXT_PUBLIC_SUPABASE_URL=https://ehuvqkolypfqrywonkxj.supabase.co
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_99-S0z8FJxQWNbhkzZBTSg_jZ8G-Dax
-SUPABASE_SERVICE_ROLE_KEY=eyJ...   (get from Supabase Settings → API → Reveal)
-NEXT_PUBLIC_SITE_URL=https://fip-next-new.vercel.app
-ANTHROPIC_API_KEY=sk-ant-api03-...
-VOYAGE_API_KEY=pa-...
-```
-
-This file is in `.gitignore` and will never be committed.
-
-### Put the KB files in `kb-source/`
-
-Create a folder `kb-source` in the project root. Put your ten KB markdown files
-in there:
-- 01_Product_Library.md
-- 02_Rumen_Health_and_Buffers.md
-- 03_Seasonal_Facial_Eczema.md
-- 04_Evidence_Notes.md
-- 04_Evidence_Notes_E5_SARA_Inflammation_Liver_Hoof.md
-- 04_Evidence_Notes_E6_Leaky_Gut.md
-- 04_Evidence_Notes_E7_Yeast_Probiotics.md
-- 05_Premix_and_Transition_Range.md
-- 06_Feed_Reference_Tables.md
-- 07_Agent_Behaviour_Spec.md
-
-(`kb-source/` is `.gitignored` — KB stays out of the repo for now)
-
-### Install dependencies and run ingest
-
-Open Command Prompt in your project folder:
-
-```
-npm install
-npm run ingest
-```
-
-You'll see output like:
-```
-Found 10 markdown files
-
-01_Product_Library.md
-  Title: Agvance Product Library
-  Version: v3
-  Type: agvance
-  Chunks: 27
-  Embedding batch 1/1 (27 chunks)...
-  ✓ Wrote 27 chunks.
-... [for each file]
-
-=== Ingestion complete ===
-  Files processed:   10
-  Files skipped:     0
-  Chunks written:    ~141
-  Tokens embedded:   ~32000
-  Voyage 3.5 free tier: used 0.0160% of it.
-```
-
-### Verify retrieval works
-
-```
-npm run verify-kb
-```
-
-This runs five sample queries and prints what comes back. Look for:
-- Each query returns relevant chunks
-- The "Recommend Rumenox" query has `✓ Discontinued filter works`
-- No errors
-
-## What this build proves
-
-- Your KB is searchable by natural language
-- Discontinued products are filtered out at the database level
-- Retrieval works end to end (embed → similarity search → return chunks)
-- The infrastructure is ready for step 3 (the actual chat endpoint)
+1. Sign in as an admin/consultant/vet user (created via the admin invite flow from step 1).
+2. Visit /chat — see the welcome screen with suggested starter questions.
+3. Ask a question about Agvance products, rumen health, transition, FE, etc.
+4. Watch the response stream in with the southern-sky aesthetic.
+5. Click "X sources" under each assistant message to expand the citations panel.
+6. Click thumbs up/down to leave feedback. Thumbs-down opens a popup with structured reasons.
+7. Switch between conversations via the left sidebar.
 
 ## What this build does NOT do
 
-- No chat endpoint yet (step 3)
-- No agent system prompt yet (step 3)
-- No farmer/consultant chat UI yet (step 3)
-- No actual conversation with Claude yet (step 3)
+- No farmer mode yet. Farmers signing in are redirected to /dashboard. Farmer mode + sign-off gate come in step 4.
+- No constellation visual / farm-data overview. Step 5.
+- No image upload / file attachment. Step 6+.
+- Plain text rendering. Markdown rendering is a step 4 enhancement.
+
+## Prerequisites
+
+Before deploying step 3:
+
+### 1. Have steps 0-2 deployed and working
+
+Specifically:
+- Sign-in works (step 1)
+- /api/health shows supabase, anthropic, and voyage all configured true
+- /api/health/kb shows 10 documents, ~141 chunks
+- You've successfully run npm run verify-kb
+
+### 2. No new env vars needed
+
+Step 3 uses the same six environment variables already in Vercel.
+
+### 3. No new SQL migration needed
+
+The message_feedback table was already created in step 2's 0002_kb_ingestion.sql migration.
+
+## Deployment
+
+Same flow as steps 1 and 2. Upload the code to GitHub via the two zips:
+
+- fip-backend-step3-UPDATE-OVERWRITE.zip — files that already exist and get replaced
+- fip-backend-step3-NEW-UPLOAD.zip — brand-new files
+
+After Vercel auto-redeploys, check:
+
+1. /api/health shows version 0.4.0
+2. Sign in at /signin
+3. Visit /chat — you should see the chat UI
+4. Send a test message like "What is CalSea Powder Advance?"
+
+## Voyage rate limit reminder
+
+As of step 2 wrap-up, you were still on Voyage's free tier (3 RPM / 10K TPM).
+Each user query embeds the question via Voyage. Under the free tier you can
+ask roughly one question every 20 seconds before throttling.
+
+For solo testing this is fine. For bringing pilot consultants online, add a
+payment method to Voyage. The 200M-tokens-free still applies.
+
+## Running the §9 spec test set
+
+After deployment, validate against the spec:
+
+1. Sign in to the deployed app
+2. Open browser devtools - Application - Cookies - copy the Supabase auth cookie
+3. Open Command Prompt in your project folder
+4. Run:
+
+   set FIP_BASE_URL=https://fip-next-new.vercel.app
+   set FIP_TEST_COOKIE=sb-...-auth-token=...
+   npm run test-spec
+
+The runner sends 9 adversarial prompts and grades each response using Claude.
+Output shows pass/fail per test with rationale. Full run takes about 4 minutes
+due to the Voyage rate cap pause.
 
 ## Troubleshooting
 
-**Ingest fails with `VOYAGE_API_KEY is not set`**: your `.env.local` file is
-missing the key or has a typo. The file must be in the project root, not in
-a subfolder.
+Chat returns "Sign in required" even though I'm signed in: cookie isn't being
+sent. Check the deployment is on the same domain as your sign-in.
 
-**Ingest fails with `match_kb_chunks does not exist`**: the SQL migration
-didn't run. Re-run `supabase/migrations/0002_kb_ingestion.sql`.
+Chat returns "Chat is currently available to consultants and vets": your
+profile has role=farmer. Either update via Supabase SQL editor, or wait for
+step 4.
 
-**Ingest succeeds but `verify-kb` returns no results**: the embeddings may
-have stored as nulls. Run this in Supabase SQL Editor to check:
-```sql
-SELECT COUNT(*) FROM kb_chunks WHERE embedding IS NOT NULL;
-```
-Should be ≥140. If it's zero, the chunks were inserted but embeddings
-failed. Check Voyage API key.
+Streaming response stops mid-sentence: look at Vercel logs. Common causes:
+Voyage rate cap, Anthropic API error, browser disconnection. Partial
+responses still get persisted.
 
-**Discontinued products surface in search results**: shouldn't happen — the
-`match_kb_chunks` RPC filters them by default. If they do, check that the
-chunks have `is_discontinued = true` set:
-```sql
-SELECT source_name, citation_label FROM kb_chunks WHERE is_discontinued;
-```
+Chat UI looks broken / unstyled: make sure styles/globals.css uploaded
+correctly. The chat-specific styles are at the bottom of the file.
+
+The system prompt feels wrong: edit lib/prompts/consultant.ts, redeploy,
+re-run npm run test-spec.
