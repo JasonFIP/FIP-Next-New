@@ -83,8 +83,8 @@ export const getServerSideProps: GetServerSideProps<Props> = async (ctx) => {
     return { redirect: { destination: '/signin', permanent: false } };
   }
 
-  // Block farmers from chat until step 4 adds farmer mode
-  if (!['admin', 'consultant', 'vet'].includes(profile.role)) {
+  // Farmers are allowed now (farmer mode). Only genuinely unknown roles bounce.
+  if (!['admin', 'consultant', 'vet', 'farmer'].includes(profile.role)) {
     return { redirect: { destination: '/dashboard', permanent: false } };
   }
 
@@ -95,6 +95,7 @@ export default function ChatPage({
   user,
 }: InferGetServerSidePropsType<typeof getServerSideProps>) {
   const router = useRouter();
+  const isFarmer = user.role === 'farmer';
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(
     null
@@ -523,7 +524,37 @@ export default function ChatPage({
                       )}
                     </div>
 
-                    {m.citations && m.citations.length > 0 && !m.isStreaming && (
+                    {isFarmer &&
+                      !m.isStreaming &&
+                      m.content &&
+                      !m.content.startsWith('Error:') && (
+                        <div
+                          style={{
+                            marginTop: 10,
+                            padding: '10px 14px',
+                            background: 'rgba(232,185,98,0.10)',
+                            borderLeft: '3px solid var(--horizon)',
+                            borderRadius: 8,
+                            fontSize: '0.82rem',
+                            color: 'var(--star-dim)',
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          ⏳ Sent to your consultant as a draft — they&rsquo;ll
+                          confirm or adjust it before you act on it.{' '}
+                          <Link
+                            href="/inbox"
+                            style={{
+                              color: 'var(--horizon)',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            Track status →
+                          </Link>
+                        </div>
+                      )}
+
+                    {!isFarmer && m.citations && m.citations.length > 0 && !m.isStreaming && (
                       <div className="msg-citations">
                         <button
                           type="button"
@@ -552,7 +583,7 @@ export default function ChatPage({
                       </div>
                     )}
 
-                    {!m.isStreaming && m.content && !m.id.startsWith('temp-') && (
+                    {!isFarmer && !m.isStreaming && m.content && !m.id.startsWith('temp-') && (
                       <div className="msg-feedback">
                         <button
                           type="button"
