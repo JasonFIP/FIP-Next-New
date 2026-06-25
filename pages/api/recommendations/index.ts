@@ -1,33 +1,36 @@
 /**
- * GET  /api/recommendations/[id]   — fetch one recommendation (RLS-guarded)
- * POST /api/recommendations/[id]   — an advisor actions a draft
+ * GET /api/recommendations
  *
- * POST body:
- *   { action: 'approve', edited_title?, edited_summary?, review_notes? }
- *   { action: 'reject',  review_notes }   // notes required on reject
+ * Role-aware listing of sign-off-gate recommendations.
  *
- * "Edit-then-approve" is just an approve with edited_title/edited_summary
- * present — the consultant's version overwrites the draft text, the original
- * is preserved in conversation history (the assistant message is untouched).
+ *   - Advisor (admin/consultant/vet): the REVIEW QUEUE — drafts for farms
+ *     they advise. Defaults to state='pending_review'; pass ?state=approved
+ *     (etc.) to widen. RLS ("Advisors read advised-farm recommendations")
+ *     already restricts rows to farms the advisor is a member of, so a
+ *     consultant only ever sees their own farms' drafts.
  *
- * Only advisors may action, and RLS ("Advisors update recommendations")
- * further restricts updates to farms the advisor is a member of — so a
- * consultant can't approve a draft for a farm they don't advise even if they
- * guess the id.
+ *   - Farmer: their OWN recommendations (the inbox, wired into the UI in a
+ *     later increment). RLS ("Drafter reads own") restricts to their drafts.
+ *
+ * Rows are enriched with farm name + farmer/reviewer display names so the
+ * UI doesn't need extra round-trips. Enrichment uses the same authenticated
+ * client, so it's still RLS-guarded (advisors may read all profiles/farms;
+ * farmers read their own farm).
  */
 
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
 
 const ADVISOR_ROLES = ['admin', 'consultant', 'vet'];
+const VALID_STATES = ['draft', 'pending_review', 'approved', 'rejected', 'expired'];
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
-  const { id } = req.query;
-  if (typeof id !== 'string') {
-    return res.status(400).json({ error: 'invalid id' });
+  if (req.method !== 'GET') {
+    res.setHeader('Allow', 'GET');
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   const supabase = createSupabaseServerClient(req, res);
@@ -38,100 +41,86 @@ export default async function handler(
     return res.status(401).json({ error: 'Sign in required' });
   }
 
-  const { data: profile } = await supabase
+  const { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select('id, role')
     .eq('id', user.id)
     .single();
-  if (!profile) {
+  if (profileError || !profile) {
     return res.status(403).json({ error: 'No profile found' });
   }
 
-  // -- GET one --
-  if (req.method === 'GET') {
-    const { data, error } = await supabase
-      .from('recommendations')
-      .select('*')
-      .eq('id', id)
-      .single();
-    if (error || !data) {
-      return res.status(404).json({ error: 'Not found or not accessible' });
-    }
-    return res.status(200).json({ recommendation: data });
-  }
+  const isAdvisor = ADVISOR_ROLES.includes(profile.role);
 
-  if (req.method !== 'POST') {
-    res.setHeader('Allow', 'GET, POST');
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  // -- POST: action a draft (advisors only) --
-  if (!ADVISOR_ROLES.includes(profile.role)) {
-    return res
-      .status(403)
-      .json({ error: 'Only consultants and vets can review recommendations' });
-  }
-
-  const body = req.body as {
-    action?: string;
-    edited_title?: string | null;
-    edited_summary?: string | null;
-    review_notes?: string | null;
-  };
-
-  if (body.action !== 'approve' && body.action !== 'reject') {
-    return res.status(400).json({ error: "action must be 'approve' or 'reject'" });
-  }
-  if (body.action === 'reject' && !body.review_notes?.trim()) {
-    return res
-      .status(400)
-      .json({ error: 'A reason (review_notes) is required to reject' });
-  }
-
-  // Confirm the draft is still actionable (not already approved/rejected).
-  const { data: current, error: currentError } = await supabase
+  // Build the base query. RLS does the security; this just shapes the view.
+  let query = supabase
     .from('recommendations')
-    .select('id, state')
-    .eq('id', id)
-    .single();
-  if (currentError || !current) {
-    return res.status(404).json({ error: 'Not found or not accessible' });
-  }
-  if (!['draft', 'pending_review'].includes(current.state)) {
-    return res.status(409).json({
-      error: `This recommendation is already ${current.state} and can't be re-actioned.`,
-    });
-  }
-
-  // Build the update.
-  const update: Record<string, unknown> = {
-    reviewed_by: profile.id,
-    reviewed_at: new Date().toISOString(),
-    review_notes: body.review_notes?.trim() || null,
-  };
-
-  if (body.action === 'approve') {
-    update.state = 'approved';
-    if (body.edited_title?.trim()) update.title = body.edited_title.trim();
-    if (body.edited_summary?.trim()) update.summary = body.edited_summary.trim();
-  } else {
-    update.state = 'rejected';
-  }
-
-  const { data: updated, error: updateError } = await supabase
-    .from('recommendations')
-    .update(update)
-    .eq('id', id)
     .select(
-      'id, state, title, summary, reasoning, review_notes, reviewed_by, reviewed_at'
-    )
-    .single();
+      'id, farm_id, drafted_by, reviewed_by, state, title, summary, reasoning, caveats, review_notes, drafted_at, reviewed_at'
+    );
 
-  if (updateError || !updated) {
-    return res.status(500).json({
-      error: `Failed to ${body.action}: ${updateError?.message ?? 'unknown'}`,
-    });
+  if (isAdvisor) {
+    // The queue. Default to pending_review; allow widening via ?state=.
+    const requested =
+      typeof req.query.state === 'string' ? req.query.state : 'pending_review';
+    if (!VALID_STATES.includes(requested)) {
+      return res.status(400).json({
+        error: `state must be one of: ${VALID_STATES.join(', ')}`,
+      });
+    }
+    query = query
+      .eq('state', requested)
+      .order('drafted_at', { ascending: true }); // oldest first = act on them in order
+  } else {
+    // Farmer inbox: their own drafts, newest first.
+    query = query
+      .eq('drafted_by', profile.id)
+      .order('drafted_at', { ascending: false });
   }
 
-  return res.status(200).json({ recommendation: updated });
+  const { data: recs, error: recError } = await query.limit(100);
+  if (recError) {
+    return res.status(500).json({ error: recError.message });
+  }
+  const rows = recs ?? [];
+
+  // -- Enrich: farm names + drafter/reviewer display names --
+  const farmIds = [...new Set(rows.map((r) => r.farm_id).filter(Boolean))];
+  const personIds = [
+    ...new Set(
+      rows
+        .flatMap((r) => [r.drafted_by, r.reviewed_by])
+        .filter(Boolean) as string[]
+    ),
+  ];
+
+  const farmNames: Record<string, string> = {};
+  if (farmIds.length > 0) {
+    const { data: farms } = await supabase
+      .from('farms')
+      .select('id, name')
+      .in('id', farmIds);
+    for (const f of farms ?? []) farmNames[f.id] = f.name;
+  }
+
+  const personNames: Record<string, string> = {};
+  if (personIds.length > 0) {
+    const { data: people } = await supabase
+      .from('profiles')
+      .select('id, first_name, last_name, email')
+      .in('id', personIds);
+    for (const p of people ?? []) {
+      personNames[p.id] =
+        [p.first_name, p.last_name].filter(Boolean).join(' ').trim() || p.email;
+    }
+  }
+
+  const recommendations = rows.map((r) => ({
+    ...r,
+    farm_name: r.farm_id ? farmNames[r.farm_id] ?? null : null,
+    drafted_by_name: r.drafted_by ? personNames[r.drafted_by] ?? null : null,
+    reviewed_by_name: r.reviewed_by ? personNames[r.reviewed_by] ?? null : null,
+  }));
+
+  return res.status(200).json({ recommendations, role: profile.role });
 }
