@@ -248,13 +248,15 @@ export default async function handler(
   // Use the service client for retrieval so RLS doesn't get in the way of
   // matching; the rows are public-read for signed-in users anyway.
   let matches: KbChunkMatch[] = [];
+  let lowConfidence = false;
   try {
     const serviceClient = createSupabaseServiceClient();
     const searchResult = await searchKb(serviceClient, userMessage, {
       matchCount: 8,
-      matchThreshold: 0.45,
+      matchThreshold: 0.35,
     });
     matches = searchResult.matches;
+    lowConfidence = searchResult.lowConfidence;
   } catch (err) {
     sendEvent(res, {
       type: 'error',
@@ -266,7 +268,7 @@ export default async function handler(
     return;
   }
 
-  const kbContext = formatChunksForPrompt(matches);
+  const kbContext = formatChunksForPrompt(matches, lowConfidence);
 
   // -- Build the system prompt --
   const displayName =
