@@ -29,6 +29,39 @@ import { readFile, readdir } from 'node:fs/promises';
 import { join, basename, resolve } from 'node:path';
 import { embedTexts, VOYAGE_EMBEDDING_DIMS } from '../lib/voyage';
 
+/** Pause helper. */
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Embed with exponential backoff on rate-limit errors. Voyage's free tier is
+ * throttled (~3 req/min); without this, a 429 throws and the document's chunks
+ * are silently lost. With it, a throttle just pauses the run and retries.
+ */
+async function embedTextsWithRetry(
+  texts: string[],
+  maxRetries = 6
+): Promise<{ embeddings: number[][]; tokensUsed: number }> {
+  let attempt = 0;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    try {
+      return await embedTexts(texts, 'document');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const isRateLimit = /\b429\b|rate.?limit|too many requests/i.test(msg);
+      if (!isRateLimit || attempt >= maxRetries) throw err;
+      attempt += 1;
+      const waitMs = Math.min(60000, 2000 * 2 ** (attempt - 1)); // 2,4,8,16,32,60s
+      console.warn(
+        `    ⏳ Voyage rate-limited; backing off ${Math.round(
+          waitMs / 1000
+        )}s (retry ${attempt}/${maxRetries})…`
+      );
+      await sleep(waitMs);
+    }
+  }
+}
+
 // Load .env.local if present
 loadEnv({ path: '.env.local' });
 loadEnv(); // also load .env as fallback
@@ -408,10 +441,33 @@ async function ingest(): Promise<IngestStats> {
       continue;
     }
 
-    if (existingDoc && existingDoc.content_hash === hash && !force) {
-      console.log(`  ✓ Unchanged (${existingDoc.chunk_count} chunks). Skipping.`);
+    // Self-healing skip: skip only if the file is unchanged AND its chunks
+    // actually landed in the DB. A doc row with 0 chunks (e.g. a past
+    // rate-limited run that recorded a count but never inserted) is always
+    // re-ingested, even when the source file is unchanged.
+    let existingChunkCount = 0;
+    if (existingDoc) {
+      const { count } = await supabase
+        .from('kb_chunks')
+        .select('id', { count: 'exact', head: true })
+        .eq('document_id', existingDoc.id);
+      existingChunkCount = count ?? 0;
+    }
+
+    if (
+      existingDoc &&
+      existingDoc.content_hash === hash &&
+      existingChunkCount > 0 &&
+      !force
+    ) {
+      console.log(`  ✓ Unchanged (${existingChunkCount} chunks). Skipping.`);
       stats.filesSkipped += 1;
       continue;
+    }
+    if (existingDoc && existingChunkCount === 0) {
+      console.log(
+        `  ⚠ Document row exists but has 0 chunks — re-ingesting to repair.`
+      );
     }
 
     // Chunk it
@@ -472,7 +528,7 @@ async function ingest(): Promise<IngestStats> {
         `  Embedding batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(chunks.length / BATCH_SIZE)} (${batch.length} chunks)...`
       );
 
-      const { embeddings, tokensUsed } = await embedTexts(texts, 'document');
+      const { embeddings, tokensUsed } = await embedTextsWithRetry(texts);
       stats.totalTokensEmbedded += tokensUsed;
 
       // Build the insert rows
@@ -512,9 +568,22 @@ async function ingest(): Promise<IngestStats> {
         break;
       }
       chunksInsertedForDoc += batch.length;
+      await sleep(1000); // smooth out bursts under the free-tier rate limit
     }
 
-    console.log(`  ✓ Wrote ${chunksInsertedForDoc} chunks.`);
+    if (chunksInsertedForDoc < chunks.length) {
+      // Didn't complete. Record the true count so the row doesn't masquerade
+      // as done — the self-healing skip above will re-ingest it on the next run.
+      await supabase
+        .from('kb_documents')
+        .update({ chunk_count: chunksInsertedForDoc })
+        .eq('id', documentId);
+      console.error(
+        `  ✗ Incomplete: wrote ${chunksInsertedForDoc}/${chunks.length} chunks. Re-run to repair.`
+      );
+    } else {
+      console.log(`  ✓ Wrote ${chunksInsertedForDoc} chunks.`);
+    }
     stats.filesProcessed += 1;
     stats.chunksWritten += chunksInsertedForDoc;
   }
