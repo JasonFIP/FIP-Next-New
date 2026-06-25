@@ -26,6 +26,7 @@ import {
 import { searchKb, formatChunksForPrompt, type KbChunkMatch } from '@/lib/kb-search';
 import { MODEL_HAIKU } from '@/lib/anthropic';
 import { buildConsultantPrompt } from '@/lib/prompts/consultant';
+import { buildFarmerPrompt } from '@/lib/prompts/farmer';
 
 // Disable Next.js body size limit and let us stream
 export const config = {
@@ -84,12 +85,74 @@ export default async function handler(
     return res.status(403).json({ error: 'No profile found' });
   }
 
-  // Step 3 = consultant mode only. Allow admin and consultant/vet roles.
-  // Farmers are blocked until step 4 adds farmer mode.
-  if (!['admin', 'consultant', 'vet'].includes(profile.role)) {
-    return res.status(403).json({
-      error: 'Chat is currently available to consultants and vets. Farmer mode is coming soon.',
-    });
+  // Defensive: only the four known roles may chat.
+  if (!['admin', 'consultant', 'vet', 'farmer'].includes(profile.role)) {
+    return res.status(403).json({ error: 'Unknown role' });
+  }
+
+  // Mode is determined by role. Farmers get the cautious, draft-framed
+  // farmer prompt and their answers become sign-off-gated recommendations.
+  // Admin/consultant/vet get the consultant prompt with full depth.
+  const mode: 'farmer' | 'consultant' =
+    profile.role === 'farmer' ? 'farmer' : 'consultant';
+
+  // For farmer mode we need the farm the draft routes to, and (for the
+  // prompt) the name of the consultant who'll review it. These run on the
+  // service client because a farmer can't read a consultant's profile under
+  // RLS, and the lookup is purely server-side.
+  let farmId: string | null = null;
+  let farmName: string | null = null;
+  let consultantName: string | null = null;
+
+  if (mode === 'farmer') {
+    const adminClient = createSupabaseServiceClient();
+
+    // The farmer's own farm (their 'owner' membership).
+    const { data: ownerMembership } = await adminClient
+      .from('farm_memberships')
+      .select('farm_id')
+      .eq('user_id', profile.id)
+      .eq('membership_role', 'owner')
+      .limit(1)
+      .maybeSingle();
+
+    if (!ownerMembership) {
+      return res.status(403).json({
+        error:
+          "Your account isn't linked to a farm yet. Ask your Agvance admin to set this up before using the assistant.",
+      });
+    }
+    farmId = ownerMembership.farm_id;
+
+    // Farm name for the prompt context.
+    const { data: farmRow } = await adminClient
+      .from('farms')
+      .select('name')
+      .eq('id', farmId)
+      .maybeSingle();
+    farmName = farmRow?.name ?? null;
+
+    // A consultant on this farm — used to name the reviewer in the draft.
+    const { data: consultantMembership } = await adminClient
+      .from('farm_memberships')
+      .select('user_id')
+      .eq('farm_id', farmId)
+      .in('membership_role', ['primary_consultant', 'consultant'])
+      .limit(1)
+      .maybeSingle();
+
+    if (consultantMembership) {
+      const { data: cProfile } = await adminClient
+        .from('profiles')
+        .select('first_name, last_name')
+        .eq('id', consultantMembership.user_id)
+        .maybeSingle();
+      consultantName =
+        [cProfile?.first_name, cProfile?.last_name]
+          .filter(Boolean)
+          .join(' ')
+          .trim() || null;
+    }
   }
 
   // -- Parse request --
@@ -125,7 +188,8 @@ export default async function handler(
       .from('conversations')
       .insert({
         user_id: profile.id,
-        mode: 'consultant',
+        mode,
+        farm_id: farmId, // null for consultant/admin, set for farmers
         title: userMessage.slice(0, 80),
       })
       .select('id')
@@ -208,10 +272,18 @@ export default async function handler(
   const displayName =
     [profile.first_name, profile.last_name].filter(Boolean).join(' ').trim() ||
     null;
-  const systemPrompt = buildConsultantPrompt({
-    userName: displayName,
-    kbContext,
-  });
+  const systemPrompt =
+    mode === 'farmer'
+      ? buildFarmerPrompt({
+          farmerName: displayName,
+          farmName,
+          consultantName,
+          kbContext,
+        })
+      : buildConsultantPrompt({
+          userName: displayName,
+          kbContext,
+        });
 
   // -- Compose API messages --
   const apiMessages = [...history, { role: 'user' as const, content: userMessage }];
@@ -220,6 +292,7 @@ export default async function handler(
   sendEvent(res, {
     type: 'meta',
     conversation_id: conversationId,
+    mode,
     user_message_id: userMsgRow.id,
     citations: matches.map((m, i) => ({
       index: i + 1,
@@ -327,6 +400,7 @@ export default async function handler(
   //   (1) the auth.uid() in the response context can be flaky after streaming
   //   (2) we want to persist even if the stream errored partway
   let assistantMessageId: string | null = null;
+  let recommendationId: string | null = null;
   try {
     const serviceClient = createSupabaseServiceClient();
     const { data: assistantRow, error: assistantError } = await serviceClient
@@ -363,6 +437,43 @@ export default async function handler(
           console.error('Failed to save citations:', citationError);
         }
       }
+
+      // -- The sign-off gate --
+      // In farmer mode, the answer is a DRAFT. Record it as a recommendation
+      // in 'pending_review' so it surfaces in the consultant's queue. The
+      // farmer can see their own draft (RLS: drafter reads own) but it isn't
+      // an approved recommendation until a consultant actions it.
+      if (mode === 'farmer' && farmId && assistantContent.trim().length > 0) {
+        const uniqueSources = matches
+          .map((m) => m.source_name)
+          .filter((v, i, a) => a.indexOf(v) === i);
+        const reasoning = uniqueSources.length
+          ? `Draft generated from Agvance Dairy Brain sources: ${uniqueSources.join(
+              ', '
+            )}. Consultant review required before the farmer acts on it.`
+          : `No specific knowledge-base sources matched this query. Consultant review required before the farmer acts on it.`;
+
+        const { data: recRow, error: recError } = await serviceClient
+          .from('recommendations')
+          .insert({
+            conversation_id: conversationId,
+            message_id: assistantRow.id,
+            farm_id: farmId,
+            drafted_by: profile.id,
+            state: 'pending_review',
+            title: userMessage.slice(0, 120),
+            summary: assistantContent,
+            reasoning,
+          })
+          .select('id')
+          .single();
+
+        if (recError) {
+          console.error('Failed to create recommendation draft:', recError);
+        } else {
+          recommendationId = recRow?.id ?? null;
+        }
+      }
     }
   } catch (err) {
     console.error('Persistence error:', err);
@@ -372,6 +483,8 @@ export default async function handler(
   sendEvent(res, {
     type: 'done',
     assistant_message_id: assistantMessageId,
+    recommendation_id: recommendationId,
+    mode,
     input_tokens: inputTokens,
     output_tokens: outputTokens,
     model: modelUsed,
