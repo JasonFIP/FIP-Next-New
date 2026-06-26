@@ -20,6 +20,7 @@ import Head from 'next/head';
 import Link from 'next/link';
 import type { GetServerSideProps, InferGetServerSidePropsType } from 'next';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
+import Markdown from '@/components/Markdown';
 
 type Recommendation = {
   id: string;
@@ -156,7 +157,9 @@ export default function InboxPage({
 
                 <div className="ib-q">{r.title}</div>
 
-                <div className="ib-answer">{r.summary}</div>
+                <div className="ib-answer">
+                  <Markdown>{r.summary}</Markdown>
+                </div>
 
                 {r.state === 'pending_review' && (
                   <div className="ib-note ib-note-pending">
@@ -260,7 +263,6 @@ export default function InboxPage({
           color: var(--star);
         }
         .ib-answer {
-          white-space: pre-wrap;
           line-height: 1.55;
           font-size: 0.92rem;
           color: var(--star-dim);
