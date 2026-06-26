@@ -27,6 +27,11 @@ import { searchKb, formatChunksForPrompt, type KbChunkMatch } from '@/lib/kb-sea
 import { MODEL_HAIKU } from '@/lib/anthropic';
 import { buildConsultantPrompt } from '@/lib/prompts/consultant';
 import { buildFarmerPrompt } from '@/lib/prompts/farmer';
+import {
+  loadFarmProfile,
+  formatFarmContext,
+  type FarmProfile,
+} from '@/lib/farm-context';
 
 // Disable Next.js body size limit and let us stream
 export const config = {
@@ -39,6 +44,7 @@ export const config = {
 interface ChatRequestBody {
   message: string;
   conversation_id?: string;
+  farm_id?: string;
 }
 
 const ANTHROPIC_API_BASE = 'https://api.anthropic.com/v1';
@@ -103,6 +109,8 @@ export default async function handler(
   let farmId: string | null = null;
   let farmName: string | null = null;
   let consultantName: string | null = null;
+  let farmProfile: FarmProfile | null = null;
+  let farmContext = '';
 
   if (mode === 'farmer') {
     const adminClient = createSupabaseServiceClient();
@@ -166,6 +174,34 @@ export default async function handler(
   }
   if (userMessage.length > 8000) {
     return res.status(400).json({ error: 'message too long (max 8000 chars)' });
+  }
+
+  // -- Resolve the farm for context --
+  // Farmers: their own farm (resolved above). Consultants/admin: the farm they
+  // selected in the chat, if any (access-checked through farm_memberships).
+  // The full profile becomes prompt context and, for farmer drafts, the
+  // recommendation snapshot.
+  {
+    const farmSvc = createSupabaseServiceClient();
+    if (mode !== 'farmer' && body.farm_id) {
+      if (profile.role === 'admin') {
+        farmId = body.farm_id;
+      } else {
+        const { data: access } = await farmSvc
+          .from('farm_memberships')
+          .select('membership_role')
+          .eq('farm_id', body.farm_id)
+          .eq('user_id', profile.id)
+          .in('membership_role', ['primary_consultant', 'consultant'])
+          .maybeSingle();
+        if (access) farmId = body.farm_id;
+      }
+    }
+    if (farmId) {
+      farmProfile = await loadFarmProfile(farmSvc, farmId);
+      if (!farmName) farmName = farmProfile?.name ?? null;
+      farmContext = formatFarmContext(farmProfile);
+    }
   }
 
   // -- Resolve or create conversation --
@@ -281,10 +317,12 @@ export default async function handler(
           farmName,
           consultantName,
           kbContext,
+          farmContext,
         })
       : buildConsultantPrompt({
           userName: displayName,
           kbContext,
+          farmContext,
         });
 
   // -- Compose API messages --
@@ -466,6 +504,7 @@ export default async function handler(
             title: userMessage.slice(0, 120),
             summary: assistantContent,
             reasoning,
+            farm_data_snapshot: farmProfile ?? null,
           })
           .select('id')
           .single();
