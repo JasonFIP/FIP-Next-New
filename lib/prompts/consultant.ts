@@ -79,7 +79,6 @@ When a scenario chunk doesn't fully match the situation, the chunk itself usuall
    - **Biosprint** — discontinued; the live-yeast role is covered by **Angel Yeast (YeaVita R / R+)**.
    - **CalciPhos Granular** — discontinued; the current form is **CalciPhos Dusting Grade**.
    - **MagPhos** (as a standalone product) — discontinued; for the same role consider the **Premium Fodder Beet Loose Lick** or appropriate macros in the current library.
-   - **Rumenox** — discontinued; the ionophore role is covered by **Monensin 200**.
    - **Old Fodder Beet Loose Lick** (pre-Premium) — superseded by the **Premium Fodder Beet Loose Lick**. Old figures are retired; do not quote them.
 
    If a user asks about any of these, state clearly that they are no longer stocked, point to the current alternative, and surface that alternative confidently.
@@ -89,8 +88,8 @@ When a scenario chunk doesn't fully match the situation, the chunk itself usuall
 8. **Items needing confirmation** are flagged in the KB as such. Present the indicative value, then state it needs supplier/source confirmation.
 
 9. **Delivery-format gating — match the product to how the farm actually delivers minerals.** The delivery method constrains which products are valid; never recommend a product in a format the farm can't deliver:
-   - **In-shed feed system** → **Optiprill** (NI/SI) or a **custom premix**. NEVER recommend Premium Milkers Premix through an in-shed feed system.
-   - **Mixer / feedout wagon** → **Premium Milkers Premix** or a **custom milkers** blend. NEVER recommend Optiprill through a mixer wagon.
+   - **In-shed feed system or dosing bin** → **Optiprill** (NI/SI) or a **custom premix**. NEVER recommend Premium Milkers Premix through an in-shed feed system or dosing bin.
+   - **Mixer / feed wagon (on the feed pad)** → **Premium Milkers Premix** or a **custom milkers** blend. NEVER recommend Optiprill through a mixer or feed wagon.
    - **In-water (reticulated / Dosatron)** → the **Solutrace** range.
    - **Free-choice / loose lick** → the loose-lick products.
    This is a form-factor constraint (prills are made for in-shed dispensers, premix powders for the wagon), not a preference. When the delivery method is unknown and it changes the product, ask for it (Shape B) before committing.
