@@ -97,6 +97,17 @@ export default function ChatPage({
 }: InferGetServerSidePropsType<typeof getServerSideProps>) {
   const router = useRouter();
   const isFarmer = user.role === 'farmer';
+  const [farms, setFarms] = useState<
+    { id: string; name: string; region: string | null }[]
+  >([]);
+  const [selectedFarmId, setSelectedFarmId] = useState<string>('');
+  useEffect(() => {
+    if (user.role === 'farmer') return;
+    fetch('/api/farms')
+      .then((r) => (r.ok ? r.json() : { farms: [] }))
+      .then((d) => setFarms(d.farms || []))
+      .catch(() => {});
+  }, [user.role]);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(
     null
@@ -201,6 +212,7 @@ export default function ChatPage({
         body: JSON.stringify({
           message: text,
           conversation_id: activeConversationId ?? undefined,
+          farm_id: selectedFarmId || undefined,
         }),
       });
 
@@ -343,7 +355,7 @@ export default function ChatPage({
         )
       );
     }
-  }, [input, isStreaming, activeConversationId, loadConversations]);
+  }, [input, isStreaming, activeConversationId, selectedFarmId, loadConversations]);
 
   // -- Submit feedback --
   const submitFeedback = useCallback(
@@ -470,6 +482,61 @@ export default function ChatPage({
 
         {/* Main chat area */}
         <main className="chat-main">
+          {!isFarmer && farms.length > 0 && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '10px 20px',
+                borderBottom: '1px solid var(--line, rgba(242,240,230,0.08))',
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 13,
+                  color: 'var(--star-dim, #c9c6b8)',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Advising
+              </span>
+              <select
+                value={selectedFarmId}
+                onChange={(e) => setSelectedFarmId(e.target.value)}
+                style={{
+                  background: 'rgba(0,0,0,0.28)',
+                  color: 'var(--star, #f2f0e6)',
+                  border: '1px solid var(--line-2, rgba(242,240,230,0.16))',
+                  borderRadius: 8,
+                  padding: '6px 10px',
+                  fontSize: 13,
+                  fontFamily: 'inherit',
+                  maxWidth: 320,
+                }}
+              >
+                <option value="">No farm — general advice</option>
+                {farms.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name}
+                    {f.region ? ` · ${f.region}` : ''}
+                  </option>
+                ))}
+              </select>
+              <a
+                href="/farms"
+                style={{
+                  fontSize: 12,
+                  color: 'var(--star-dim, #c9c6b8)',
+                  textDecoration: 'none',
+                  marginLeft: 'auto',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Manage farms
+              </a>
+            </div>
+          )}
           <div className="chat-stream">
             {messages.length === 0 && (
               <div className="welcome">
