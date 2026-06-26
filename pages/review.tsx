@@ -18,6 +18,7 @@ import Head from 'next/head';
 import Link from 'next/link';
 import type { GetServerSideProps, InferGetServerSidePropsType } from 'next';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
+import Markdown from '@/components/Markdown';
 
 type Recommendation = {
   id: string;
@@ -191,7 +192,9 @@ export default function ReviewPage({
                     {r.title}
                   </div>
 
-                  <div className="rv-draft">{r.summary}</div>
+                  <div className="rv-draft">
+                    <Markdown>{r.summary}</Markdown>
+                  </div>
 
                   {r.reasoning && (
                     <div className="rv-reason">{r.reasoning}</div>
@@ -410,7 +413,6 @@ export default function ReviewPage({
           margin-bottom: 4px;
         }
         .rv-draft {
-          white-space: pre-wrap;
           line-height: 1.55;
           font-size: 0.92rem;
           color: var(--star-dim);
