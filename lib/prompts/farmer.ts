@@ -125,6 +125,7 @@ export function buildFarmerPrompt(opts: {
   farmName: string | null;
   consultantName: string | null;
   kbContext: string;
+  farmContext?: string;
 }): string {
   const who = opts.farmerName
     ? `You are speaking with ${opts.farmerName}.`
@@ -136,11 +137,14 @@ export function buildFarmerPrompt(opts: {
     ? ` Their Agvance consultant, ${opts.consultantName}, will review any draft you prepare. You can refer to them by name when you mention the review step.`
     : ' Their Agvance consultant will review any draft you prepare.';
 
+  const farmBlock = opts.farmContext ? `\n\n${opts.farmContext}` : '';
+
   return [
     FARMER_SYSTEM_PROMPT,
     '',
     '# Current farmer',
     who + farm + consultant,
+    farmBlock,
     '',
     '# Knowledge base context for this turn',
     '',
