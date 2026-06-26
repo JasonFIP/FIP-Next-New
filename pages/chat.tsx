@@ -17,6 +17,7 @@ import { useRouter } from 'next/router';
 import type { GetServerSideProps, InferGetServerSidePropsType } from 'next';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
 import { createSupabaseBrowserClient } from '@/lib/supabase-browser';
+import Markdown from '@/components/Markdown';
 
 type Citation = {
   index?: number;
@@ -513,14 +514,13 @@ export default function ChatPage({
                 {m.role === 'assistant' && (
                   <>
                     <div className="msg-assistant-content">
-                      {m.content || (
+                      {m.content ? (
+                        <Markdown>{m.content}</Markdown>
+                      ) : (
                         <span className="thinking">
                           <span className="dot-pulse" />
                           {statusText || 'Thinking…'}
                         </span>
-                      )}
-                      {m.isStreaming && m.content && (
-                        <span className="cursor-blink">▍</span>
                       )}
                     </div>
 
