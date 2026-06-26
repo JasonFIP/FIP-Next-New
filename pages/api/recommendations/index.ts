@@ -56,7 +56,7 @@ export default async function handler(
   let query = supabase
     .from('recommendations')
     .select(
-      'id, farm_id, drafted_by, reviewed_by, state, title, summary, reasoning, caveats, review_notes, drafted_at, reviewed_at'
+      'id, farm_id, drafted_by, reviewed_by, state, title, summary, reasoning, caveats, review_notes, drafted_at, reviewed_at, farm_data_snapshot'
     );
 
   if (isAdvisor) {
