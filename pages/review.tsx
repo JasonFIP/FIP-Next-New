@@ -31,7 +31,38 @@ type Recommendation = {
   drafted_at: string;
   farm_name: string | null;
   drafted_by_name: string | null;
+  farm_data_snapshot: FarmSnapshot | null;
 };
+
+type FarmSnapshot = {
+  region?: string | null;
+  island?: string | null;
+  herd_size?: number | null;
+  diet?: string | null;
+  mineral_delivery?: string | null;
+  production_stage?: string | null;
+  milk_urea?: number | null;
+  milk_protein?: number | null;
+  milk_fat?: number | null;
+};
+
+function farmSnapshotSummary(s: FarmSnapshot | null): string {
+  if (!s) return '';
+  const parts: string[] = [];
+  const loc = [s.region, s.island].filter(Boolean).join(', ');
+  if (loc) parts.push(loc);
+  if (s.herd_size != null) parts.push(`${s.herd_size} cows`);
+  if (s.production_stage) parts.push(s.production_stage);
+  if (s.diet) parts.push(s.diet);
+  if (s.mineral_delivery) parts.push(s.mineral_delivery);
+  const ht = [
+    s.milk_urea != null ? `MU ${s.milk_urea}` : null,
+    s.milk_protein != null ? `Prot ${s.milk_protein}%` : null,
+    s.milk_fat != null ? `Fat ${s.milk_fat}%` : null,
+  ].filter(Boolean);
+  if (ht.length) parts.push(`Herd test: ${ht.join(', ')}`);
+  return parts.join(' · ');
+}
 
 type Props = {
   user: { id: string; first_name: string | null; role: string };
@@ -186,6 +217,35 @@ export default function ReviewPage({
                     <span className="rv-muted">{timeAgo(r.drafted_at)}</span>
                     {result && <span className="rv-result">{result}</span>}
                   </div>
+
+                  {r.farm_data_snapshot &&
+                    farmSnapshotSummary(r.farm_data_snapshot) && (
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: 'var(--star-dim, #c9c6b8)',
+                          background: 'rgba(0,0,0,0.18)',
+                          border: '1px solid var(--line, rgba(242,240,230,0.08))',
+                          borderRadius: 8,
+                          padding: '7px 11px',
+                          margin: '8px 0',
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        <span
+                          style={{
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em',
+                            fontSize: 10,
+                            color: 'var(--muted, #7b8094)',
+                            marginRight: 8,
+                          }}
+                        >
+                          Farm context
+                        </span>
+                        {farmSnapshotSummary(r.farm_data_snapshot)}
+                      </div>
+                    )}
 
                   <div className="rv-q">
                     <span className="rv-qlabel">Farmer asked</span>
