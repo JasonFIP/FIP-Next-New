@@ -214,14 +214,18 @@ You are now ready to respond. Wait for the user's first message.`;
 export function buildConsultantPrompt(opts: {
   userName: string | null;
   kbContext: string;
+  farmContext?: string;
 }): string {
   const greeting = opts.userName
     ? `\n\n# Current user\nYou are speaking with ${opts.userName}, an Agvance consultant.`
     : '';
 
+  const farmBlock = opts.farmContext ? `\n\n${opts.farmContext}` : '';
+
   return [
     CONSULTANT_SYSTEM_PROMPT,
     greeting,
+    farmBlock,
     '',
     '# Knowledge base context for this turn',
     '',
