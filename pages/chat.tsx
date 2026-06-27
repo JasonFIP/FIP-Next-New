@@ -19,6 +19,7 @@ import { createSupabaseServerClient } from '@/lib/supabase-server';
 import { createSupabaseBrowserClient } from '@/lib/supabase-browser';
 import Markdown from '@/components/Markdown';
 import { useVoice } from '@/lib/use-voice';
+import SkyBackground from '@/components/SkyBackground';
 
 type Citation = {
   index?: number;
@@ -571,6 +572,7 @@ export default function ChatPage({
 
   return (
     <>
+      <SkyBackground variant="ambient" />
       <Head>
         <title>FIP &middot; Chat</title>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
