@@ -51,7 +51,7 @@ export default function SkyBackground({ variant = 'full' }: { variant?: Variant 
       canvas!.style.height = window.innerHeight + 'px';
       const area = window.innerWidth * window.innerHeight;
 
-      const n = Math.min(full ? 760 : 440, Math.round(area / (full ? 1500 : 2400)));
+      const n = Math.min(full ? 1100 : 460, Math.round(area / (full ? 1200 : 2400)));
       stars = [];
       for (let i = 0; i < n; i++) {
         const bright = Math.random();
@@ -67,7 +67,7 @@ export default function SkyBackground({ variant = 'full' }: { variant?: Variant 
       }
 
       band = [];
-      const m = Math.min(full ? 900 : 480, Math.round(area / (full ? 1300 : 2200)));
+      const m = Math.min(full ? 1300 : 520, Math.round(area / (full ? 1000 : 2200)));
       for (let i = 0; i < m; i++) {
         const t = Math.random();
         const cx = t * W;
@@ -191,9 +191,7 @@ export default function SkyBackground({ variant = 'full' }: { variant?: Variant 
                 animationDuration: `${s.t}s`,
                 animationDelay: `${s.delay}s`,
               }}
-            >
-              {s.label ? <i className="sky-label">{s.label}</i> : null}
-            </span>
+            />
           ))}
         </div>
       )}
@@ -219,11 +217,11 @@ export default function SkyBackground({ variant = 'full' }: { variant?: Variant 
           inset: -25%;
           background: linear-gradient(
             118deg,
-            transparent 32%,
-            rgba(150, 164, 210, 0.1) 41%,
-            rgba(202, 214, 247, 0.28) 50%,
-            rgba(150, 164, 210, 0.1) 59%,
-            transparent 68%
+            transparent 38%,
+            rgba(150, 164, 210, 0.08) 45%,
+            rgba(190, 204, 240, 0.16) 50%,
+            rgba(150, 164, 210, 0.08) 55%,
+            transparent 62%
           );
           filter: blur(9px);
           mix-blend-mode: screen;
@@ -231,9 +229,9 @@ export default function SkyBackground({ variant = 'full' }: { variant?: Variant 
         .sky-mw-core {
           background: linear-gradient(
             118deg,
-            transparent 44%,
-            rgba(226, 232, 255, 0.2) 50%,
-            transparent 56%
+            transparent 46%,
+            rgba(214, 224, 255, 0.12) 50%,
+            transparent 54%
           );
           filter: blur(4px);
         }
@@ -281,19 +279,6 @@ export default function SkyBackground({ variant = 'full' }: { variant?: Variant 
           animation-iteration-count: infinite;
           animation-timing-function: ease-in-out;
         }
-        .sky-label {
-          position: absolute;
-          left: 50%;
-          top: 130%;
-          transform: translateX(-50%);
-          font-size: 9.5px;
-          font-style: normal;
-          letter-spacing: 0.14em;
-          text-transform: uppercase;
-          color: rgba(233, 240, 255, 0.5);
-          white-space: nowrap;
-          font-weight: 500;
-        }
         @keyframes skyTwinkle {
           0%,
           100% {
@@ -319,9 +304,6 @@ export default function SkyBackground({ variant = 'full' }: { variant?: Variant 
         @media (max-width: 560px) {
           .sky-crux {
             height: 44vh;
-          }
-          .sky-label {
-            font-size: 8px;
           }
         }
         @media (prefers-reduced-motion: reduce) {
