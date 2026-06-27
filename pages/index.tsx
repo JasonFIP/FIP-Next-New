@@ -16,6 +16,8 @@ import { useRouter } from 'next/router';
 import type { GetServerSideProps, InferGetServerSidePropsType } from 'next';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
 import { createSupabaseBrowserClient } from '@/lib/supabase-browser';
+import SkyBackground from '@/components/SkyBackground';
+import InfoButton from '@/components/InfoButton';
 
 type Props = {
   user: { id: string; first_name: string | null; role: string } | null;
@@ -75,6 +77,7 @@ export default function Home({
 
   return (
     <>
+      <SkyBackground />
       <Head>
         <title>Agvance Dairy Brain</title>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -85,6 +88,20 @@ export default function Home({
             <span className="mark" />
             <span>
               Agvance <span className="brand-dim">Dairy Brain</span>
+              <span
+                style={{
+                  display: 'block',
+                  fontSize: 10,
+                  letterSpacing: '0.28em',
+                  textTransform: 'uppercase',
+                  color: 'var(--horizon, #e8b962)',
+                  opacity: 0.85,
+                  marginTop: 2,
+                  fontWeight: 500,
+                }}
+              >
+                Success Together
+              </span>
             </span>
           </div>
           {user ? (
@@ -193,6 +210,8 @@ export default function Home({
           <small>Agvance Dairy Brain · Farm Intelligence Platform</small>
         </footer>
       </main>
+
+      <InfoButton />
 
       <style jsx>{`
         .home {
