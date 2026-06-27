@@ -154,6 +154,107 @@ export default function ChatPage({
     if (voice.speakEnabled) voice.speak(t);
   };
 
+  // -- Attachments: image (Claude vision) or transcript (text) --
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [attachment, setAttachment] = useState<{
+    kind: 'image' | 'text';
+    name: string;
+    mediaType?: string;
+    data?: string;
+    text?: string;
+    previewUrl?: string;
+  } | null>(null);
+
+  const clearAttachment = () => {
+    setAttachment((a) => {
+      if (a?.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(a.previewUrl);
+      return null;
+    });
+  };
+
+  // Downscale + re-encode to keep photos small and within Claude's image limits.
+  function downscaleImage(
+    file: File,
+    maxDim = 1568,
+    quality = 0.85
+  ): Promise<{ data: string; mediaType: string; previewUrl: string }> {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width;
+        let h = img.height;
+        if (w > maxDim || h > maxDim) {
+          const scale = maxDim / Math.max(w, h);
+          w = Math.round(w * scale);
+          h = Math.round(h * scale);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        URL.revokeObjectURL(url);
+        if (!ctx) {
+          reject(new Error('no canvas context'));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, w, h);
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve({
+          data: dataUrl.split(',')[1],
+          mediaType: 'image/jpeg',
+          previewUrl: dataUrl,
+        });
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('image decode failed'));
+      };
+      img.src = url;
+    });
+  }
+
+  const readRawImage = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      setAttachment({
+        kind: 'image',
+        name: file.name,
+        mediaType: file.type || 'image/jpeg',
+        data: result.includes(',') ? result.split(',')[1] : result,
+        previewUrl: result,
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleFile = (file: File) => {
+    if (!file) return;
+    if (file.type.startsWith('image/')) {
+      downscaleImage(file)
+        .then(({ data, mediaType, previewUrl }) =>
+          setAttachment({
+            kind: 'image',
+            name: file.name,
+            mediaType,
+            data,
+            previewUrl,
+          })
+        )
+        .catch(() => readRawImage(file));
+    } else {
+      const reader = new FileReader();
+      reader.onload = () =>
+        setAttachment({
+          kind: 'text',
+          name: file.name,
+          text: String(reader.result || ''),
+        });
+      reader.readAsText(file);
+    }
+  };
+
   // -- Load conversation list --
   const loadConversations = useCallback(async () => {
     try {
@@ -214,10 +315,17 @@ export default function ChatPage({
   // -- Send a message --
   const sendMessage = useCallback(async () => {
     const text = input.trim();
-    if (!text || isStreaming) return;
+    if ((!text && !attachment) || isStreaming) return;
 
     // Stop any in-progress read-aloud when a new question is sent.
     if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
+
+    // Capture the attachment for this turn (cleared from the composer below).
+    const att = attachment;
+    const attNote = att
+      ? `\n\n[Attached ${att.kind === 'image' ? 'image' : 'transcript'}: ${att.name}]`
+      : '';
+    const optimisticContent = (text + attNote).trim() || '(attachment)';
 
     // Add the user message optimistically
     const userMsgId = `temp-${Date.now()}-user`;
@@ -225,7 +333,7 @@ export default function ChatPage({
 
     setMessages((prev) => [
       ...prev,
-      { id: userMsgId, role: 'user', content: text },
+      { id: userMsgId, role: 'user', content: optimisticContent },
       {
         id: assistantMsgId,
         role: 'assistant',
@@ -235,6 +343,7 @@ export default function ChatPage({
       },
     ]);
     setInput('');
+    clearAttachment();
     setIsStreaming(true);
     setStatusText('Searching Dairy Brain…');
 
@@ -246,6 +355,15 @@ export default function ChatPage({
           message: text,
           conversation_id: activeConversationId ?? undefined,
           farm_id: selectedFarmId || undefined,
+          attachment: att
+            ? {
+                kind: att.kind,
+                name: att.name,
+                media_type: att.mediaType,
+                data: att.data,
+                text: att.text,
+              }
+            : undefined,
         }),
       });
 
@@ -389,7 +507,7 @@ export default function ChatPage({
         )
       );
     }
-  }, [input, isStreaming, activeConversationId, selectedFarmId, loadConversations]);
+  }, [input, isStreaming, attachment, activeConversationId, selectedFarmId, loadConversations]);
 
   // -- Submit feedback --
   const submitFeedback = useCallback(
@@ -723,6 +841,76 @@ export default function ChatPage({
 
           <div className="chat-input-wrap">
             <style>{`@keyframes db-voice-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.65;transform:scale(1.07)}}`}</style>
+            {attachment && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  marginBottom: 8,
+                  padding: '7px 10px',
+                  background: 'rgba(0,0,0,0.28)',
+                  border: '1px solid var(--line-2, rgba(242,240,230,0.16))',
+                  borderRadius: 10,
+                }}
+              >
+                {attachment.kind === 'image' && attachment.previewUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={attachment.previewUrl}
+                    alt=""
+                    style={{
+                      width: 32,
+                      height: 32,
+                      objectFit: 'cover',
+                      borderRadius: 6,
+                      flex: 'none',
+                    }}
+                  />
+                ) : (
+                  <span style={{ flex: 'none', color: 'var(--star-dim, #c9c6b8)' }}>
+                    📎
+                  </span>
+                )}
+                <span
+                  style={{
+                    fontSize: 13,
+                    color: 'var(--star, #f2f0e6)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {attachment.name}
+                  <span
+                    style={{
+                      color: 'var(--star-dim, #c9c6b8)',
+                      marginLeft: 8,
+                      fontSize: 11,
+                    }}
+                  >
+                    {attachment.kind === 'image' ? 'image' : 'transcript'}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  onClick={clearAttachment}
+                  aria-label="Remove attachment"
+                  style={{
+                    marginLeft: 'auto',
+                    flex: 'none',
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--star-dim, #c9c6b8)',
+                    cursor: 'pointer',
+                    fontSize: 16,
+                    lineHeight: 1,
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            )}
             <div className="chat-input">
               <textarea
                 ref={inputRef}
@@ -733,6 +921,53 @@ export default function ChatPage({
                 rows={1}
                 disabled={isStreaming}
               />
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif,.txt,.md,.vtt,.srt"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleFile(f);
+                  e.target.value = '';
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isStreaming}
+                aria-label="Upload a transcript or image"
+                title="Upload transcript or image"
+                style={{
+                  flex: 'none',
+                  width: 42,
+                  height: 42,
+                  borderRadius: 11,
+                  cursor: isStreaming ? 'default' : 'pointer',
+                  border: '1px solid var(--line-2, rgba(242,240,230,0.16))',
+                  background: attachment
+                    ? 'rgba(120,160,220,0.16)'
+                    : 'transparent',
+                  color: attachment
+                    ? 'var(--star, #f2f0e6)'
+                    : 'var(--star-dim, #c9c6b8)',
+                  display: 'grid',
+                  placeItems: 'center',
+                }}
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                </svg>
+              </button>
               {voice.supported && (
                 <button
                   type="button"
@@ -842,15 +1077,15 @@ export default function ChatPage({
               <button
                 type="button"
                 onClick={sendMessage}
-                disabled={!input.trim() || isStreaming}
+                disabled={(!input.trim() && !attachment) || isStreaming}
                 className="send-btn"
               >
                 {isStreaming ? '…' : 'Send'}
               </button>
             </div>
             <div className="input-foot">
-              {voice.supported ? 'Tap the mic to speak · ' : ''}Shift+Enter for
-              new line · Enter to send · Cited against the Agvance Dairy Brain
+              {voice.supported ? 'Mic to speak · ' : ''}Paperclip to attach a photo
+              or transcript · Enter to send · Cited against the Agvance Dairy Brain
             </div>
           </div>
         </main>
