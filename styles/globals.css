@@ -1081,3 +1081,14 @@ a:hover {
     padding: 16px 18px 20px;
   }
 }
+
+/* --- Sky background --- */
+/* The fixed SkyBackground sits at z-index:-1; the page body must be transparent
+   so it isn't painted over by its own background. html keeps a dark fallback so
+   there's no flash before the starfield canvas paints. */
+html {
+  background: #04060d;
+}
+body {
+  background: transparent;
+}
