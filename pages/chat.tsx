@@ -314,8 +314,8 @@ export default function ChatPage({
   }, [router]);
 
   // -- Send a message --
-  const sendMessage = useCallback(async () => {
-    const text = input.trim();
+  const sendMessage = useCallback(async (overrideText?: string) => {
+    const text = (typeof overrideText === 'string' ? overrideText : input).trim();
     if ((!text && !attachment) || isStreaming) return;
 
     // Stop any in-progress read-aloud when a new question is sent.
@@ -509,6 +509,17 @@ export default function ChatPage({
       );
     }
   }, [input, isStreaming, attachment, activeConversationId, selectedFarmId, loadConversations]);
+
+  // Auto-send a question passed from the landing page (/chat?q=...).
+  const autoSentRef = useRef(false);
+  useEffect(() => {
+    const q = router.query.q;
+    if (typeof q === 'string' && q.trim() && !autoSentRef.current) {
+      autoSentRef.current = true;
+      sendMessage(q.trim());
+      router.replace('/chat', undefined, { shallow: true });
+    }
+  }, [router.query.q, sendMessage, router]);
 
   // -- Submit feedback --
   const submitFeedback = useCallback(
