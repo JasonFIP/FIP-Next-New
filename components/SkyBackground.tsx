@@ -22,7 +22,13 @@ const CRUX = [
   { left: '45.5%', top: '50%', d: 7, c: '#eef3ff', g: 15, t: 5.2, delay: 0.2, label: 'Hadar' },
 ];
 
-export default function SkyBackground({ variant = 'full' }: { variant?: Variant }) {
+export default function SkyBackground({
+  variant = 'full',
+  labels = false,
+}: {
+  variant?: Variant;
+  labels?: boolean;
+}) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const full = variant === 'full';
 
@@ -191,7 +197,11 @@ export default function SkyBackground({ variant = 'full' }: { variant?: Variant 
                 animationDuration: `${s.t}s`,
                 animationDelay: `${s.delay}s`,
               }}
-            />
+            >
+              {labels && s.label ? (
+                <i className="sky-label">{s.label}</i>
+              ) : null}
+            </span>
           ))}
         </div>
       )}
@@ -279,6 +289,19 @@ export default function SkyBackground({ variant = 'full' }: { variant?: Variant 
           animation-iteration-count: infinite;
           animation-timing-function: ease-in-out;
         }
+        .sky-label {
+          position: absolute;
+          left: 50%;
+          top: 130%;
+          transform: translateX(-50%);
+          font-size: 9.5px;
+          font-style: normal;
+          letter-spacing: 0.14em;
+          text-transform: uppercase;
+          color: rgba(233, 240, 255, 0.5);
+          white-space: nowrap;
+          font-weight: 500;
+        }
         @keyframes skyTwinkle {
           0%,
           100% {
@@ -304,6 +327,9 @@ export default function SkyBackground({ variant = 'full' }: { variant?: Variant 
         @media (max-width: 560px) {
           .sky-crux {
             height: 44vh;
+          }
+          .sky-label {
+            font-size: 8px;
           }
         }
         @media (prefers-reduced-motion: reduce) {
