@@ -41,10 +41,19 @@ export const config = {
   },
 };
 
+interface ChatAttachment {
+  kind: 'image' | 'text';
+  name: string;
+  media_type?: string;
+  data?: string;
+  text?: string;
+}
+
 interface ChatRequestBody {
   message: string;
   conversation_id?: string;
   farm_id?: string;
+  attachment?: ChatAttachment;
 }
 
 const ANTHROPIC_API_BASE = 'https://api.anthropic.com/v1';
@@ -165,16 +174,25 @@ export default async function handler(
 
   // -- Parse request --
   const body = req.body as Partial<ChatRequestBody>;
-  if (!body.message || typeof body.message !== 'string') {
+  if (typeof body.message !== 'string') {
     return res.status(400).json({ error: 'message is required' });
   }
   const userMessage = body.message.trim();
-  if (userMessage.length === 0) {
+  const attachment = body.attachment;
+  if (userMessage.length === 0 && !attachment) {
     return res.status(400).json({ error: 'message is empty' });
   }
   if (userMessage.length > 8000) {
     return res.status(400).json({ error: 'message too long (max 8000 chars)' });
   }
+
+  // Note appended to the stored user message so history reflects the attachment.
+  const attachNote = attachment
+    ? `\n\n[Attached ${
+        attachment.kind === 'image' ? 'image' : 'transcript'
+      }: ${attachment.name}]`
+    : '';
+  const storedUserMessage = (userMessage + attachNote).trim() || '(attachment)';
 
   // -- Resolve the farm for context --
   // Farmers: their own farm (resolved above). Consultants/admin: the farm they
@@ -244,7 +262,7 @@ export default async function handler(
     .insert({
       conversation_id: conversationId,
       role: 'user',
-      content: userMessage,
+      content: storedUserMessage,
     })
     .select('id')
     .single();
@@ -286,13 +304,15 @@ export default async function handler(
   let matches: KbChunkMatch[] = [];
   let lowConfidence = false;
   try {
-    const serviceClient = createSupabaseServiceClient();
-    const searchResult = await searchKb(serviceClient, userMessage, {
-      matchCount: 8,
-      matchThreshold: 0.35,
-    });
-    matches = searchResult.matches;
-    lowConfidence = searchResult.lowConfidence;
+    if (userMessage) {
+      const serviceClient = createSupabaseServiceClient();
+      const searchResult = await searchKb(serviceClient, userMessage, {
+        matchCount: 8,
+        matchThreshold: 0.35,
+      });
+      matches = searchResult.matches;
+      lowConfidence = searchResult.lowConfidence;
+    }
   } catch (err) {
     sendEvent(res, {
       type: 'error',
@@ -325,8 +345,32 @@ export default async function handler(
           farmContext,
         });
 
-  // -- Compose API messages --
-  const apiMessages = [...history, { role: 'user' as const, content: userMessage }];
+  // -- Compose API messages (attach image for vision, or transcript text) --
+  let currentContent: any = userMessage;
+  if (attachment?.kind === 'image' && attachment.data) {
+    const caption =
+      userMessage ||
+      'Look at the attached image and help with it in a dairy-nutrition context. If it shows a feed or mineral label, read the key values.';
+    currentContent = [
+      { type: 'text', text: caption },
+      {
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: attachment.media_type || 'image/jpeg',
+          data: attachment.data,
+        },
+      },
+    ];
+  } else if (attachment?.kind === 'text' && attachment.text) {
+    const instruction =
+      userMessage ||
+      'Summarise this meeting transcript: key points, decisions made, any products or recommendations discussed, and clear action items.';
+    currentContent = `${instruction}\n\n--- Transcript: ${
+      attachment.name
+    } ---\n${attachment.text.slice(0, 24000)}\n--- End of transcript ---`;
+  }
+  const apiMessages = [...history, { role: 'user' as const, content: currentContent }];
 
   // -- Send the meta event with citations so the UI can render them --
   sendEvent(res, {
