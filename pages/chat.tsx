@@ -18,6 +18,7 @@ import type { GetServerSideProps, InferGetServerSidePropsType } from 'next';
 import { createSupabaseServerClient } from '@/lib/supabase-server';
 import { createSupabaseBrowserClient } from '@/lib/supabase-browser';
 import Markdown from '@/components/Markdown';
+import { useVoice } from '@/lib/use-voice';
 
 type Citation = {
   index?: number;
@@ -124,6 +125,35 @@ export default function ChatPage({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  // -- Voice: dictation (speech-to-text) + read-aloud (text-to-speech) --
+  const voiceBaseRef = useRef('');
+  const voice = useVoice({
+    lang: 'en-NZ',
+    onTranscript: (text) => {
+      const base = voiceBaseRef.current;
+      setInput((base ? base + ' ' : '') + text);
+    },
+  });
+  const handleMic = () => {
+    if (voice.listening) {
+      voice.stopListening();
+      return;
+    }
+    voice.stopSpeaking();
+    voiceBaseRef.current = input.trim();
+    voice.startListening();
+  };
+  const handleSpeakerToggle = () => {
+    const next = !voice.speakEnabled;
+    voice.setSpeakEnabled(next);
+    if (!next) voice.stopSpeaking();
+  };
+  // Latest read-aloud closure — callable from sendMessage without dep churn.
+  const speakAnswerRef = useRef<(t: string) => void>(() => {});
+  speakAnswerRef.current = (t: string) => {
+    if (voice.speakEnabled) voice.speak(t);
+  };
+
   // -- Load conversation list --
   const loadConversations = useCallback(async () => {
     try {
@@ -185,6 +215,9 @@ export default function ChatPage({
   const sendMessage = useCallback(async () => {
     const text = input.trim();
     if (!text || isStreaming) return;
+
+    // Stop any in-progress read-aloud when a new question is sent.
+    if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
 
     // Add the user message optimistically
     const userMsgId = `temp-${Date.now()}-user`;
@@ -301,6 +334,7 @@ export default function ChatPage({
                   )
                 );
               }
+              speakAnswerRef.current(assistantContent);
             } else if (evt.type === 'error') {
               setMessages((prev) =>
                 prev.map((m) =>
@@ -688,6 +722,7 @@ export default function ChatPage({
           </div>
 
           <div className="chat-input-wrap">
+            <style>{`@keyframes db-voice-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.65;transform:scale(1.07)}}`}</style>
             <div className="chat-input">
               <textarea
                 ref={inputRef}
@@ -698,6 +733,112 @@ export default function ChatPage({
                 rows={1}
                 disabled={isStreaming}
               />
+              {voice.supported && (
+                <button
+                  type="button"
+                  onClick={handleMic}
+                  disabled={isStreaming}
+                  aria-label={
+                    voice.listening ? 'Stop dictation' : 'Dictate your question'
+                  }
+                  title={voice.listening ? 'Stop' : 'Speak'}
+                  style={{
+                    flex: 'none',
+                    width: 42,
+                    height: 42,
+                    borderRadius: 11,
+                    cursor: isStreaming ? 'default' : 'pointer',
+                    border: '1px solid var(--line-2, rgba(242,240,230,0.16))',
+                    background: voice.listening
+                      ? 'rgba(220,90,90,0.18)'
+                      : 'transparent',
+                    color: voice.listening
+                      ? '#ff9a9a'
+                      : 'var(--star-dim, #c9c6b8)',
+                    display: 'grid',
+                    placeItems: 'center',
+                    animation: voice.listening
+                      ? 'db-voice-pulse 1.3s ease-in-out infinite'
+                      : 'none',
+                  }}
+                >
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <rect x="9" y="2" width="6" height="11" rx="3" />
+                    <path d="M5 10a7 7 0 0 0 14 0M12 17v4" />
+                  </svg>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleSpeakerToggle}
+                aria-label={
+                  voice.speakEnabled
+                    ? 'Turn off read aloud'
+                    : 'Read answers aloud'
+                }
+                aria-pressed={voice.speakEnabled}
+                title={
+                  voice.speakEnabled ? 'Read aloud: on' : 'Read aloud: off'
+                }
+                style={{
+                  flex: 'none',
+                  width: 42,
+                  height: 42,
+                  borderRadius: 11,
+                  cursor: 'pointer',
+                  border: '1px solid var(--line-2, rgba(242,240,230,0.16))',
+                  background: voice.speakEnabled
+                    ? 'rgba(120,160,220,0.16)'
+                    : 'transparent',
+                  color: voice.speakEnabled
+                    ? 'var(--star, #f2f0e6)'
+                    : 'var(--star-dim, #c9c6b8)',
+                  display: 'grid',
+                  placeItems: 'center',
+                  animation: voice.speaking
+                    ? 'db-voice-pulse 1s ease-in-out infinite'
+                    : 'none',
+                }}
+              >
+                {voice.speakEnabled ? (
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M4 9v6h4l5 4V5L8 9H4z" />
+                    <path d="M16 8a5 5 0 0 1 0 8" />
+                  </svg>
+                ) : (
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M4 9v6h4l5 4V5L8 9H4z" />
+                    <path d="M22 9l-6 6M16 9l6 6" />
+                  </svg>
+                )}
+              </button>
               <button
                 type="button"
                 onClick={sendMessage}
@@ -708,7 +849,8 @@ export default function ChatPage({
               </button>
             </div>
             <div className="input-foot">
-              Shift+Enter for new line · Enter to send · Cited against the Agvance Dairy Brain
+              {voice.supported ? 'Tap the mic to speak · ' : ''}Shift+Enter for
+              new line · Enter to send · Cited against the Agvance Dairy Brain
             </div>
           </div>
         </main>
