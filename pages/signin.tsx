@@ -14,6 +14,7 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
 import { createSupabaseBrowserClient } from '@/lib/supabase-browser';
+import SkyBackground from '@/components/SkyBackground';
 
 export default function SignIn() {
   const router = useRouter();
@@ -53,6 +54,7 @@ export default function SignIn() {
 
   return (
     <>
+      <SkyBackground />
       <Head>
         <title>Sign in — FIP</title>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -60,8 +62,23 @@ export default function SignIn() {
       <main className="auth-container">
         <header className="auth-header">
           <span className="dot" />
-          <span className="brand">FIP &middot; Farm Intelligence</span>
+          <span className="brand">Agvance &middot; Dairy Brain</span>
         </header>
+        <div
+          style={{
+            textAlign: 'center',
+            fontSize: 11,
+            letterSpacing: '0.42em',
+            textTransform: 'uppercase',
+            color: 'var(--horizon, #e8b962)',
+            opacity: 0.9,
+            fontWeight: 500,
+            marginBottom: 22,
+            paddingLeft: '0.42em',
+          }}
+        >
+          Success Together
+        </div>
 
         <section className="auth-card">
           <h1>Sign in</h1>
