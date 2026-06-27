@@ -1089,7 +1089,7 @@ export default function ChatPage({
               </button>
               <button
                 type="button"
-                onClick={sendMessage}
+               onClick={() => sendMessage()}
                 disabled={(!input.trim() && !attachment) || isStreaming}
                 className="send-btn"
               >
